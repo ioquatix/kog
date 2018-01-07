@@ -1,0 +1,4 @@
+
+namespace Kog {
+	void sing();
+}
