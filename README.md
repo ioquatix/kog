@@ -2,10 +2,6 @@
 
 Kog is a fantastic project with lots of potential.
 
-For examples and documentation please see the main [project page][1].
-
-[1]: http://teapot.nz/
-
 ## Setup
 
 The build tool [teapot] needs to be installed (which requires [Ruby]):

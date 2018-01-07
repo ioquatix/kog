@@ -19,11 +19,22 @@ define_target 'kog-library' do |target|
 	target.build do
 		source_root = target.package.path + 'source'
 		copy headers: source_root.glob('Kog/**/*.{h,hpp}')
-		build static_library: 'Kog', source_files: source_root.glob('Kog/**/*.cpp')
+		
+		cache_prefix = environment[:build_prefix] / environment.checksum
+		parsers = source_root.glob('Kog/**/*Parser.rl')
+		
+		implementation_files = parsers.collect do |file|
+			implementation_file = cache_prefix / (file.relative_path + '.cpp')
+			convert source_file: file, destination_path: implementation_file
+		end
+		
+		build static_library: 'Kog', source_files: source_root.glob('Kog/**/*.cpp') + implementation_files
 	end
 	
 	target.depends 'Build/Files'
 	target.depends 'Build/Clang'
+	
+	target.depends 'Convert/Ragel'
 	
 	target.depends :platform
 	target.depends 'Language/C++14', private: true
@@ -96,4 +107,6 @@ end
 
 define_configuration "kog" do |configuration|
 	configuration.public!
+	
+	configuration.require "ragel"
 end

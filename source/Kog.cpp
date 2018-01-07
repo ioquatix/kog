@@ -1,9 +1,11 @@
 
-#include <Kog/Teapot.hpp>
+#include <Kog/Parser.hpp>
 
 int main (int argc, char ** argv) {
-	Kog::sing();
+	Kog::Parser parser;
 	
-	// Relax. Everything is okay:
+	//parser.parse("(:foo, :bar)");
+	parser.parse("puts \"Hello World\"\n");
+	
 	return 0;
 }

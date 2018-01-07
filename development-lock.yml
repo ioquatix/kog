@@ -35,3 +35,9 @@ build-files:
 streams:
   :commit: cd6fd9411e62156dd5dd0cf63dca4af62b297961
   :branch: master
+ragel:
+  :commit: 70f775ca22c0e96d74823fc67079d18eb31c4716
+  :branch: master
+build-make:
+  :commit: 30484395cf630c34ee757c90f015b23a036b85b1
+  :branch: master
