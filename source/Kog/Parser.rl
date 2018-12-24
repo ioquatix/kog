@@ -13,18 +13,20 @@
 	machine kog;
 	alphtype unsigned char;
 	
-	newline = "\n" | ';' | empty;
+	eot = 4;
+	
+	newline = "\n";
+	eos = space* (newline | ";" | eot);
 	
 	unicode = any - ascii;
 	identifier_character = [a-zA-Z0-9_];
 	
-	action mark_begin {
-		std::cerr << "mark_begin: " << std::string(p, pe) << std::endl;
-		mark = p;
+	action terminal_begin {
+		terminal_mark = p;
 	}
 	
-	action mark_end {
-		std::cerr << "mark_end: " << std::string(mark, p) << std::endl;
+	action terminal_end {
+		log(level, "terminal", terminal_mark, p);
 	}
 	
 	action identifier_begin {
@@ -32,7 +34,6 @@
 	}
 	
 	action identifier_end {
-		std::cerr << "identifier_end: " << std::string(identifier_mark, p) << std::endl;
 	}
 	
 	identifier = identifier_character+ >identifier_begin %identifier_end;
@@ -40,7 +41,7 @@
 	symbol = ":" identifier;
 	quoted_string = '"' (any - '"')* '"';
 	
-	terminal = (symbol | quoted_string) >mark_begin %mark_end;
+	terminal = (symbol | quoted_string) >terminal_begin %terminal_end;
 	
 	action nested_expression {
 		std::cerr << "nested_expression: " << std::string(p, pe) << std::endl;
@@ -55,56 +56,109 @@
 	}
 	
 	action nested_arguments {
-		std::cerr << "parsing nested arguments: " << std::string(p, pe) << std::endl;
+		//log(level, "parsing nested arguments", p, pe);
+		
 		arguments_mark = p;
 		fcall nested_arguments;
 	}
 	
 	action flat_arguments {
-		std::cerr << "parsing flat arguments: " << std::string(p, pe) << std::endl;
+		//log(level, "parsing flat arguments", p, pe);
+		
 		arguments_mark = p;
 		fcall flat_arguments;
 	}
 	
 	action arguments_exit {
-		std::cerr << "arguments: " << std::string(arguments_mark, p) << std::endl;
+		log(level, "arguments", arguments_mark, p);
+		
 		fret;
 	}
 	
 	arguments = (
-		('(' >nested_arguments) |
-		(space >flat_arguments)
-	);
+		('(' >nested_arguments)
+		| ((space - eos)+ %flat_arguments)
+	)?;
 	
-	function_invoke = terminal | (identifier arguments);
-	method_invoke = (('(' @nested_expression) | function_invoke) ("." identifier arguments)*;
+	action function_invoke_begin {
+		//log(level, "parsing function invoke", p, pe);
+		function_mark = p;
+	}
 	
-	expression = space* (method_invoke);
+	action function_invoke_end {
+		log(level, "function invoke", function_mark, p);
+	}
+	
+	function_invoke = (
+		terminal |
+		(identifier arguments)
+	) >function_invoke_begin %function_invoke_end;
+	
+	action method_begin {
+		method_mark = p;
+	}
+	
+	action method_end {
+		log(level, "method", method_mark, p);
+	}
+	
+	method = ("." identifier arguments) >method_begin %method_end;
+	method_invoke = (('(' @nested_expression) | function_invoke) method*;
+	
+	expression = method_invoke;
 	expressions = expression (space* "," expression)*;
 	
-	flat_arguments := expressions newline @arguments_exit;
-	nested_arguments := expressions ")" @arguments_exit;
-	nested_expression := expressions ")" @nested_expression_exit;
+	flat_arguments := expressions @arguments_exit;
+	nested_arguments := expressions? ")" @arguments_exit;
+	nested_expression := expressions? ")" @nested_expression_exit;
 	
-	action if_statement {std::cerr << "if_statement" << std::endl;}
-	action unless_statement {std::cerr << "unless_statement" << std::endl;}
-	action do_statement {std::cerr << "do_statement" << std::endl;}
-	action module_statement {std::cerr << "module_statement" << std::endl;}
-	action class_statement {std::cerr << "class_statement" << std::endl;}
-	action assignment_statement {std::cerr << "assignment_statement" << std::endl;}
-	action expression_statement {std::cerr << "expression_statement" << std::endl;}
+	action comment_statement {log(level, "comment", statement_mark, p);}
+	action if_statement {}
+	action unless_statement {std::cerr << "[unless]" << std::endl;}
+	action do_statement {std::cerr << "[do]" << std::endl;}
+	action module_statement {std::cerr << "[module]" << std::endl;}
+	action class_statement {std::cerr << "[class]" << std::endl;}
+	action rescue_statement {std::cerr << "[rescue]" << std::endl;}
+	action assignment_statement {std::cerr << "[assignment]" << std::endl;}
+	action expression_statement {std::cerr << "[expression]" << std::endl;}
 	
 	action parse_error {std::cerr << "parse error" << std::endl;}
 	
-	statement := (
-		("if " expression newline) %if_statement |
-		("unless " expression newline) %unless_statement |
-		(expression " do") %do_statement |
-		("module " identifier newline) %module_statement |
-		("class " identifier newline) %class_statement |
-		(expressions " = " expressions newline) %assignment_statement |
-		(expression) %expression_statement
-	)+;
+	action statement_begin {
+		statement_mark = p;
+		//log(level, "parsing statement", p, pe);
+		
+		level += 1;
+	}
+	
+	action statement_end {
+		log(level, "statement", statement_mark, p);
+		level -= 1;
+	}
+	
+	end = space* "end" eos >{log(level, "end", p, pe);};
+	
+	if_statement = ("if" | "unless" . space) @{std::cerr << "if_statement" << std::endl; fcall if_body;};
+	class_statement = ("module" | "class") space %class_statement >{fcall class_body;};
+	
+	expression_statement = expression eos;
+	comment_statement = space* "#" (any - newline)* newline;
+	
+	statement = space* (
+#		| if_statement
+#		| class_statement
+#		| (expression " rescue " expression) %rescue_statement
+#		| (expressions " = " expressions) %assignment_statement
+		expression_statement %expression_statement
+		| comment_statement %comment_statement
+	) >statement_begin %statement_end;
+	
+	if_else = "else" statement;
+	if_body := expression eos statement eos (end | if_else) @{fret;};
+	
+	class_body := statement* end @{fret;};
+	
+	main := statement*;
 }%%
 
 %% write data;
@@ -122,12 +176,13 @@ namespace Kog
 	void Parser::parse(const std::string & buffer)
 	{
 		int stack[32], cs, top;
+		std::size_t level = 0;
 		
 		auto p = reinterpret_cast<const unsigned char *>(buffer.data());
 		auto pe = p + buffer.size();
 		auto eof = pe;
 		
-		decltype(p) mark, arguments_mark, identifier_mark;
+		decltype(p) terminal_mark, arguments_mark, identifier_mark, statement_mark, function_mark, method_mark;
 		
 		%% write init;
 		%% write exec;
@@ -136,8 +191,17 @@ namespace Kog
 			cs = %%{ write error; }%%;
 		}
 		
+		if (cs < %%{write first_final;}%%) {
+			std::cerr << "failed to finish parse in accepting state, stopped in state " << cs << std::endl;
+		}
+		
 		if (p < pe) {
 			std::cerr << "failed to parse all input, stopped at " << std::string(p, pe) << std::endl;
 		}
+	}
+	
+	void Parser::log(std::size_t level, const char * message, const unsigned char * begin, const unsigned char * end)
+	{
+		std::cerr << std::string("\t", level) << message << ": '" << std::string(begin, end) << "'" << std::endl;
 	}
 }

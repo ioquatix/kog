@@ -1,0 +1,62 @@
+
+class LinkedList(T)
+	class Link
+		@item = Link
+		
+		@previous = Pointer(Link)
+		@next = Pointer(Link)
+		
+		def initialize(@item, @previous, @next)
+		end
+		
+		attr :item
+	end
+	
+	@start = Link
+	@end = Link
+	
+	method initialize
+	end
+	
+	method each(&block : Yield(T))
+		current = @start
+		
+		while current
+			yield current.item
+			
+			current = current.next
+		end
+	end
+	
+	method append(item : T)
+		@end = Link.new(item, nil, @start)
+		@start ||= @end
+	end
+	
+	method prepend(item : T)
+		@start = Link.new(item, nil, @start)
+		@end ||= @start
+	end
+end
+
+B = Integer(8, false)
+I32 = Integer(32, true)
+U32 = Integer(32, false)
+I64 = Integer(64, true)
+U64 = Integer(64, false)
+F32 = Float(32)
+F64 = Float(64)
+D = Decimal()
+S = Pointer(B)
+
+list = LinkedList(Object).new
+
+method make_list(thing)
+	list = LinkedList(thing.type).new
+	
+	list.append(thing)
+	
+	return list
+end
+
+list = make_list("Foobar")

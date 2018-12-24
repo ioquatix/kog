@@ -21,6 +21,6 @@ namespace Kog
 		void parse(const std::string & buffer);
 		
 	private:
-		
+		void log(std::size_t level, const char * message, const unsigned char * begin, const unsigned char * end);
 	};
 }
