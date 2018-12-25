@@ -15,6 +15,11 @@ namespace Kog
 	class Parser
 	{
 	public:
+		struct Node {
+			const char * begin;
+			const char * end;
+		};
+		
 		Parser();
 		virtual ~Parser();
 		

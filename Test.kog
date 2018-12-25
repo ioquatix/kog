@@ -1,3 +1,4 @@
 
 # This is a statement
-"Foobar".length("Foo")
+self.insert(index, 5, "foo")
+

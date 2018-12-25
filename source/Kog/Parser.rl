@@ -6,7 +6,9 @@
 //  Copyright, 2018, by Samuel Williams. All rights reserved.
 //
 
+#include <Kog/String.hpp>
 #include <Kog/Parser.hpp>
+
 #include <iostream>
 
 %%{
@@ -40,8 +42,9 @@
 	
 	symbol = ":" identifier;
 	quoted_string = '"' (any - '"')* '"';
+	number = digit+ ("." digit+ ("e" digit+));
 	
-	terminal = (symbol | quoted_string) >terminal_begin %terminal_end;
+	terminal = (symbol | quoted_string | number) >terminal_begin %terminal_end;
 	
 	action nested_expression {
 		std::cerr << "nested_expression: " << std::string(p, pe) << std::endl;
@@ -56,14 +59,14 @@
 	}
 	
 	action nested_arguments {
-		//log(level, "parsing nested arguments", p, pe);
+		log(level, "parsing nested arguments", p, pe);
 		
 		arguments_mark = p;
 		fcall nested_arguments;
 	}
 	
 	action flat_arguments {
-		//log(level, "parsing flat arguments", p, pe);
+		log(level, "parsing flat arguments", p, pe);
 		
 		arguments_mark = p;
 		fcall flat_arguments;
@@ -75,10 +78,20 @@
 		fret;
 	}
 	
+	action arguments_begin {
+		level += 1;
+		log(level, "parsing arguments", p, pe);
+	}
+	
+	action arguments_end {
+		log(level, "arguments", arguments_mark, p);
+		level -= 1;
+	}
+	
 	arguments = (
 		('(' >nested_arguments)
-		| ((space - eos)+ %flat_arguments)
-	)?;
+		| (space+ %flat_arguments)
+	) >arguments_begin %arguments_end;
 	
 	action function_invoke_begin {
 		//log(level, "parsing function invoke", p, pe);
@@ -89,9 +102,8 @@
 		log(level, "function invoke", function_mark, p);
 	}
 	
-	function_invoke = (
-		terminal |
-		(identifier arguments)
+	function_invoke = terminal | (
+		identifier arguments?
 	) >function_invoke_begin %function_invoke_end;
 	
 	action method_begin {
@@ -102,25 +114,35 @@
 		log(level, "method", method_mark, p);
 	}
 	
-	method = ("." identifier arguments) >method_begin %method_end;
+	method = ("." identifier arguments?) >method_begin %method_end;
 	method_invoke = (('(' @nested_expression) | function_invoke) method*;
 	
-	expression = method_invoke;
-	expressions = expression (space* "," expression)*;
+	action expression_begin {
+		log(level, "parsing expression", p, pe);
+		
+		expression_mark = p;
+	}
+	
+	action expression_end {
+		log(level, "expression", expression_mark, p);
+	}
+	
+	expression = space* method_invoke >expression_begin %expression_end space*;
+	expressions = expression ("," space* expression)*;
 	
 	flat_arguments := expressions @arguments_exit;
 	nested_arguments := expressions? ")" @arguments_exit;
 	nested_expression := expressions? ")" @nested_expression_exit;
 	
 	action comment_statement {log(level, "comment", statement_mark, p);}
-	action if_statement {}
-	action unless_statement {std::cerr << "[unless]" << std::endl;}
-	action do_statement {std::cerr << "[do]" << std::endl;}
-	action module_statement {std::cerr << "[module]" << std::endl;}
-	action class_statement {std::cerr << "[class]" << std::endl;}
-	action rescue_statement {std::cerr << "[rescue]" << std::endl;}
-	action assignment_statement {std::cerr << "[assignment]" << std::endl;}
-	action expression_statement {std::cerr << "[expression]" << std::endl;}
+	action if_statement {log(level, "if", statement_mark, p);}
+	action unless_statement {log(level, "unless", statement_mark, p);}
+	action do_statement {log(level, "do", statement_mark, p);}
+	action module_statement {log(level, "module", statement_mark, p);}
+	action class_statement {log(level, "class", statement_mark, p);}
+	action rescue_statement {log(level, "rescue", statement_mark, p);}
+	action assignment_statement {log(level, "assignment", statement_mark, p);}
+	action expression_statement {log(level, "expression", statement_mark, p);}
 	
 	action parse_error {std::cerr << "parse error" << std::endl;}
 	
@@ -132,7 +154,7 @@
 	}
 	
 	action statement_end {
-		log(level, "statement", statement_mark, p);
+		//log(level, "statement", statement_mark, p);
 		level -= 1;
 	}
 	
@@ -182,7 +204,9 @@ namespace Kog
 		auto pe = p + buffer.size();
 		auto eof = pe;
 		
-		decltype(p) terminal_mark, arguments_mark, identifier_mark, statement_mark, function_mark, method_mark;
+		log(level, "parsing", p, pe);
+		
+		decltype(p) terminal_mark, arguments_mark, identifier_mark, statement_mark, expression_mark, function_mark, method_mark;
 		
 		%% write init;
 		%% write exec;
@@ -196,12 +220,22 @@ namespace Kog
 		}
 		
 		if (p < pe) {
-			std::cerr << "failed to parse all input, stopped at " << std::string(p, pe) << std::endl;
+			std::cerr << "failed to parse all input, stopped at: ";
+			
+			std::string buffer(p, pe);
+			escape_string(std::cerr, buffer);
+			
+			std::cerr << std::endl;
 		}
 	}
 	
 	void Parser::log(std::size_t level, const char * message, const unsigned char * begin, const unsigned char * end)
 	{
-		std::cerr << std::string("\t", level) << message << ": '" << std::string(begin, end) << "'" << std::endl;
+		std::cerr << std::string("\t", level) << message << ": ";
+		
+		std::string buffer(begin, end);
+		escape_string(std::cerr, buffer);
+		
+		std::cerr << std::endl;
 	}
 }
