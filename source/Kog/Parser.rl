@@ -15,13 +15,14 @@
 	machine kog;
 	alphtype unsigned char;
 	
+	# End Of Transmission (Ctrl-D from terminal)
 	eot = 4;
 	
-	newline = "\n";
-	eos = space* (newline | ";" | eot);
+	newline = "\n" | eot;
+	eos = space* (newline | ";");
 	
 	unicode = any - ascii;
-	identifier_character = [a-zA-Z0-9_];
+	identifier_character = [a-zA-Z_];
 	
 	action terminal_begin {
 		terminal_mark = p;
@@ -42,9 +43,10 @@
 	
 	symbol = ":" identifier;
 	quoted_string = '"' (any - '"')* '"';
-	number = digit+ ("." digit+ ("e" digit+));
+	decimal = [+\-]? digit+ ("." digit+ ("e" digit+)?)?;
+	heximal = "0x" xdigit+;
 	
-	terminal = (symbol | quoted_string | number) >terminal_begin %terminal_end;
+	terminal = (symbol | quoted_string | decimal | heximal) >terminal_begin %terminal_end;
 	
 	action nested_expression {
 		std::cerr << "nested_expression: " << std::string(p, pe) << std::endl;
@@ -58,8 +60,26 @@
 		fret;
 	}
 	
+	action nested_array {
+		//log(level, "parsing nested array", p, pe);
+		
+		arguments_mark = p;
+		fcall nested_array;
+	}
+	
+	action nested_index {
+		//log(level, "parsing nested index", p, pe);
+		
+		arguments_mark = p;
+		fcall nested_index;
+	}
+	
+	action index_exit {
+		fret;
+	}
+	
 	action nested_arguments {
-		log(level, "parsing nested arguments", p, pe);
+		//log(level, "parsing nested arguments", p, pe);
 		
 		arguments_mark = p;
 		fcall nested_arguments;
@@ -73,23 +93,24 @@
 	}
 	
 	action arguments_exit {
-		log(level, "arguments", arguments_mark, p);
+		//log(level, "arguments", arguments_mark, p);
 		
 		fret;
 	}
 	
 	action arguments_begin {
 		level += 1;
-		log(level, "parsing arguments", p, pe);
+		//log(level, "parsing arguments", p, pe);
 	}
 	
 	action arguments_end {
-		log(level, "arguments", arguments_mark, p);
+		//log(level, "arguments", arguments_mark, p);
 		level -= 1;
 	}
 	
 	arguments = (
-		('(' >nested_arguments)
+		('[' >nested_index)
+		| ('(' >nested_arguments)
 		| (space+ %flat_arguments)
 	) >arguments_begin %arguments_end;
 	
@@ -99,7 +120,7 @@
 	}
 	
 	action function_invoke_end {
-		log(level, "function invoke", function_mark, p);
+		log(level, "call function", function_mark, p);
 	}
 	
 	function_invoke = terminal | (
@@ -111,30 +132,35 @@
 	}
 	
 	action method_end {
-		log(level, "method", method_mark, p);
+		log(level, "invoke method", method_mark, p);
 	}
 	
 	method = ("." identifier arguments?) >method_begin %method_end;
 	method_invoke = (('(' @nested_expression) | function_invoke) method*;
 	
 	action expression_begin {
-		log(level, "parsing expression", p, pe);
+		//log(level, "parsing expression", p, pe);
 		
 		expression_mark = p;
 	}
 	
 	action expression_end {
-		log(level, "expression", expression_mark, p);
+		//log(level, "expression", expression_mark, p);
 	}
 	
-	expression = space* method_invoke >expression_begin %expression_end space*;
-	expressions = expression ("," space* expression)*;
+	expression = method_invoke >expression_begin %expression_end;
+	expressions = space* expression (space* "," space* expression space*)* ","?;
+	
+	keyed_expression = (expression | identifier) ":" expression;
+	keyed_expressions = keyed_expression ("," keyed_expression)*;
 	
 	flat_arguments := expressions @arguments_exit;
+	nested_index := expressions? "]" @index_exit;
+	# nested_array := expressions? "]" @array_exit;
+	# nested_table := keyed_expressions? "}" @table_exit;
 	nested_arguments := expressions? ")" @arguments_exit;
 	nested_expression := expressions? ")" @nested_expression_exit;
 	
-	action comment_statement {log(level, "comment", statement_mark, p);}
 	action if_statement {log(level, "if", statement_mark, p);}
 	action unless_statement {log(level, "unless", statement_mark, p);}
 	action do_statement {log(level, "do", statement_mark, p);}
@@ -163,24 +189,25 @@
 	if_statement = ("if" | "unless" . space) @{std::cerr << "if_statement" << std::endl; fcall if_body;};
 	class_statement = ("module" | "class") space %class_statement >{fcall class_body;};
 	
-	expression_statement = expression eos;
-	comment_statement = space* "#" (any - newline)* newline;
+	comment = space* "#" (any - newline)* newline;
+	whitespace = space+;
 	
-	statement = space* (
+	statement = (
 #		| if_statement
 #		| class_statement
 #		| (expression " rescue " expression) %rescue_statement
 #		| (expressions " = " expressions) %assignment_statement
-		expression_statement %expression_statement
-		| comment_statement %comment_statement
-	) >statement_begin %statement_end;
+		expression %expression_statement
+	) >statement_begin %statement_end eos;
 	
 	if_else = "else" statement;
 	if_body := expression eos statement eos (end | if_else) @{fret;};
 	
 	class_body := statement* end @{fret;};
 	
-	main := statement*;
+	statements = (whitespace | comment | statement)*;
+	
+	main := statements eot?;
 }%%
 
 %% write data;
@@ -231,7 +258,7 @@ namespace Kog
 	
 	void Parser::log(std::size_t level, const char * message, const unsigned char * begin, const unsigned char * end)
 	{
-		std::cerr << std::string("\t", level) << message << ": ";
+		std::cerr << std::string(level, '\t') << message << ": ";
 		
 		std::string buffer(begin, end);
 		escape_string(std::cerr, buffer);
