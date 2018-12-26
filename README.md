@@ -1,6 +1,10 @@
 # Kog
 
-Kog is a fantastic project with lots of potential.
+Kog is an experimental programming language with a syntax similar to Ruby.
+
+## Motivation
+
+Kog is an interpreted language which generates compiled code. The interpreter can execute the compiled code.
 
 ## Setup
 
